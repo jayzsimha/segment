@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 2.8)
+set(CMAKE_BUILD_TYPE ${CMAKE_CXX_FLAGS_DEBUG})
+project( Segmentation )
+find_package( OpenCV REQUIRED )
+add_executable( segment segment.cpp )
+target_link_libraries( segment ${OpenCV_LIBS} )
