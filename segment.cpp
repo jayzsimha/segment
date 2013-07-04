@@ -267,32 +267,36 @@ void saveSegmentedImage( string outfilename, Mat& _img, Mat& _mask, vector<Point
 Rect bounding_box(Mat _img,int y0,int y1)
 {
     Mat img_gray,edge_image;
-    cvtColor(_img, img_gray, CV_BGR2GRAY );                                                                                     
-    Canny(img_gray,edge_image,180,10);
-    imwrite("edgeImage.png",edge_image);
-    int left = edge_image.cols;
-    int right = 0;
-    int x = 0;
-    int y = 0;
+    vector<vector<Point> > contours;
+    vector<Point> flattened_contours;
+    vector<Vec4i> hierarchy;
+
+    cvtColor(_img, img_gray, CV_BGR2GRAY );
+    Canny(img_gray,edge_image,100,200,3);
+    findContours(edge_image,contours,hierarchy,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_SIMPLE);
     
-    while(x < edge_image.cols) {
-            y = y0;
-            while(y < y1) {
-                    int pix = (int)edge_image.at<uchar>(y,x);
-                    if(pix > 0) {
-                            if(left > x) { 
-                                left = x;
-                                #ifdef __DEBUG_
-                                    cout << x <<" "<< y << " "<<pix << endl;
-                                #endif
-                            }
-                            if(right < x) { right = x; }
-                    }
-                    y++;
-            }
-            x++;
+    for(int i=0;i<contours.size();i++) {
+        for(int j=0;j<contours[i].size();j++)
+            flattened_contours.push_back(contours[i][j]);
     }
-    return Rect(Point(left,y0),Point(right,y1));
+
+    /*vector<vector<Point> >hull( contours.size() );
+    for( int i = 0; i < contours.size(); i++ ) {
+        convexHull( Mat(contours[i]), hull[i], false ); 
+    }
+
+    Mat dst = Mat::zeros(_img.size(),_img.type());
+    int idx = 0;
+    for( ; idx >= 0; idx = hierarchy[idx][0] )
+    {    
+        Scalar color( rand()&255, rand()&255, rand()&255 );        
+        drawContours( dst, contours, idx, color, CV_FILLED, 8, hierarchy );
+        drawContours( dst, hull, idx, Scalar(255,255,255), 1, 8, vector<Vec4i>());
+    }
+    
+    imwrite("contours.png",dst);*/
+    Rect rect = boundingRect(flattened_contours);
+    return rect;
 }
 
 bool detectFace(Mat& _img, Rect& r) {
@@ -348,7 +352,7 @@ void segmentImage(Mat& _img, Rect& _rect,string outfilename)
     Rect face;
     int y0 = 10;
     if(detectFace(_img,face)) {
-        y0 = face.y-(_img.rows/10);
+        y0 = face.y-(_img.rows/5);
     }
     
     int y1 = _img.rows;

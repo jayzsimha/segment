@@ -14,7 +14,7 @@ This file is provided 'as is' with no expressed or implied warranty.
 
 #define most_significant_color_bits char(0xff ^ ((1<<4)-1))
 
-_INLINE int report(const char* format, ...)
+/*_INLINE int report(const char* format, ...)
 {
   static bool ignore = false;
   if (ignore) return 0;
@@ -30,7 +30,7 @@ _INLINE int report(const char* format, ...)
   #endif
   printf(buf);
   return nbytes;
-}
+}*/
 
 _INLINE int max(int x, int y) {
     if(x>y)
