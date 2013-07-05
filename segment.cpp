@@ -175,7 +175,7 @@ void imwrite_withalpha(string outfilename,Mat& res) {
             uchar r = res.at<Vec3b>( iy, ix )[2];
 
             // skip zeros
-            if( b == 0 && g == 0 && r == 0 ){}
+            if( b == 255 && g == 0 && r == 255 ){}
             else {
 
                     cv::Vec4b& rgba = target.at<cv::Vec4b>(iy, ix);
@@ -249,8 +249,16 @@ void morph(Mat& _mask) {
 void saveSegmentedImage( string outfilename, Mat& _img, Mat& _mask, vector<Point>& _bgdPxls, vector<Point>& _fgdPxls )
 {
     Mat res = Mat::zeros(_img.size(),_img.type());
+    Point pts[4];
+    pts[0] = Point(0,0);
+    pts[1] = Point(_img.cols,0);
+    pts[2] = Point(_img.cols,_img.rows);
+    pts[3] = Point(0,_img.rows);
+    fillConvexPoly(res,pts,4,CV_RGB(255,0,255));
+
     Mat target = Mat::zeros(_img.size(),_img.type());
     Mat binMask;
+
     if( _mask.empty() )
         _img.copyTo( res );
     else {
@@ -263,18 +271,50 @@ void saveSegmentedImage( string outfilename, Mat& _img, Mat& _mask, vector<Point
     //imwrite( outfilename, res);
 }
 
+Rect bounding_box(Mat _img,int y0,int y1) {   
+    Mat img_gray,edge_image;
+    cvtColor(_img, img_gray, CV_BGR2GRAY );                                                                                     
+    Canny(img_gray,edge_image,180,10);
+    imwrite("edgeImage.png",edge_image);
+    int left = edge_image.cols;
+    int right = 0;
+    int x = 0;
+    int y = 0;
+    
+    while(x < edge_image.cols) {
+            y = y0;
+            while(y < y1) {
+                    int pix = (int)edge_image.at<uchar>(y,x);
+                    if(pix > 0) {
+                            if(left > x) { 
+                                left = x;
+                                #ifdef __DEBUG_
+                                    cout << x <<" "<< y << " "<<pix << endl;
+                                #endif
+                            }
+                            if(right < x) { right = x; }
+                    }
+                    y++;
+            }
+            x++;
+    }
+    return Rect(Point(left,y0),Point(right,y1));
+}
 
-Rect bounding_box(Mat _img,int y0,int y1)
+/*Rect bounding_box(Mat _img)
 {
     Mat img_gray,edge_image;
     vector<vector<Point> > contours;
     vector<Point> flattened_contours;
+    vector<Point> approx_curve;
     vector<Vec4i> hierarchy;
 
     cvtColor(_img, img_gray, CV_BGR2GRAY );
-    Canny(img_gray,edge_image,100,200,3);
+    Canny(img_gray,edge_image,200,255,5,true);
+    imwrite("edge_image.png",edge_image);
     findContours(edge_image,contours,hierarchy,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_SIMPLE);
     
+    vector<Point>::const_iterator it, itEnd;
     for(int i=0;i<contours.size();i++) {
         for(int j=0;j<contours[i].size();j++)
             flattened_contours.push_back(contours[i][j]);
@@ -291,13 +331,21 @@ Rect bounding_box(Mat _img,int y0,int y1)
     {    
         Scalar color( rand()&255, rand()&255, rand()&255 );        
         drawContours( dst, contours, idx, color, CV_FILLED, 8, hierarchy );
-        drawContours( dst, hull, idx, Scalar(255,255,255), 1, 8, vector<Vec4i>());
+        //drawContours( dst, hull, idx, Scalar(255,255,255), 1, 8, vector<Vec4i>());
     }
+
+    RotatedRect rect = minAreaRect(flattened_contours);
+    Point2f vertices[4];
+    rect.points(vertices);
+    for (int i = 0; i < 4; i++)
+        line(dst, vertices[i], vertices[(i+1)%4], Scalar(0,255,0));
     
-    imwrite("contours.png",dst);*/
+    //approxPolyDP(flattened_contours,approx_curve,1.2,true);
     Rect rect = boundingRect(flattened_contours);
+    imwrite("contours.png",dst);
+    //return Rect(Point(0,0),Point(_img.rows,_img.cols));
     return rect;
-}
+}*/
 
 bool detectFace(Mat& _img, Rect& r) {
     String haar_face_cascade_name = "/usr/local/share/OpenCV/haarcascades/haarcascade_frontalface_alt.xml";
@@ -339,8 +387,8 @@ bool detectFace(Mat& _img, Rect& r) {
 **/
 void segmentImage(Mat& _img, Rect& _rect,string outfilename)
 {
-    int max_iter = 5;
-    Mat mask;
+    int max_iter = 10;
+    Mat mask = Mat::zeros(_img.size(),CV_8UC1);
     Mat bgdModel, fgdModel;
     vector<Point> fgdPxls, bgdPxls;
     vector<Point> edgePxls;
@@ -351,21 +399,47 @@ void segmentImage(Mat& _img, Rect& _rect,string outfilename)
 #endif
     Rect face;
     int y0 = 10;
-    if(detectFace(_img,face)) {
-        y0 = face.y-(_img.rows/5);
-    }
-    
     int y1 = _img.rows;
+
+    if(detectFace(_img,face))
+        _rect.y = face.y-(_img.rows/5);
     
     _rect = bounding_box(_img,y0,y1);
-    grabCut( _img, mask, _rect, bgdModel, fgdModel, 0, GC_INIT_WITH_RECT);
-    //showImage( _img, mask, bgdPxls, fgdPxls );
+
+    Mat img_gray,edge_image;
+    cvtColor(_img, img_gray, CV_BGR2GRAY );                                                                                     
+    Canny(img_gray,edge_image,180,10);
+
+    vector<Vec4i> lines;
+    HoughLinesP(edge_image, lines, 1, CV_PI/180, 50, 50, 10 );
+    Mat str_edges = Mat::zeros(_img.size(),CV_8UC1);
+    for( size_t i = 0; i < lines.size(); i++ ) {
+        Vec4i l = lines[i];
+        line( str_edges, Point(l[0], l[1]), Point(l[2], l[3]), 255, 3);
+    }
+    imwrite("edgeImage.png",str_edges);
+
+    for(int x=0;x<str_edges.cols;x++) {
+        for(int y=0;y<str_edges.rows;y++) {
+            int pix = (int)str_edges.at<uchar>(y,x);
+            Point pt = Point(x,y);
+            if(pix > 0) {//|| (faceDetected && pt.inside(face))) {
+                bgdPxls.push_back(pt);
+            }
+        }
+    }
+    changeMask(mask,bgdPxls,fgdPxls,true);
+    bgdPxls.clear(); fgdPxls.clear();
+    grabCut( _img, mask, _rect, bgdModel, fgdModel, 0, GC_INIT_WITH_RECT|GC_INIT_WITH_RECT);
+#ifdef __DEBUG_    
+    showImage( _img, mask, bgdPxls, fgdPxls );
+#endif
     assert( bgdPxls.empty() && fgdPxls.empty());
     
     while(iterCount < max_iter) {
         changeMask(mask,bgdPxls,fgdPxls);
         bgdPxls.clear(); fgdPxls.clear();
-        grabCut( _img, mask, _rect, bgdModel, fgdModel, max_iter );
+        grabCut( _img, mask, _rect, bgdModel, fgdModel, 1 );
         iterCount++;
     }
     
